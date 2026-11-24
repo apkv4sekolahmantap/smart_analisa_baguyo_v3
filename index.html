@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2B0F0B">
+<title>Smart Analisa Baguyo</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23B8432B'/%3E%3Cpath d='M9 17l5 5 9-11' fill='none' stroke='%23fff' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://script.google.com"><link rel="preconnect" href="https://script.googleusercontent.com"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined&display=block" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="sysBar" class="sysbar" hidden></div>
+<!-- ═══ LANDING (publik) ═══ -->
+<div id="v-landing" class="view">
+  <header class="lh"><b>Smart Analisa Baguyo</b><span><button class="btn gh" style="color:#fff" onclick="show('reg')">Daftar</button><button class="btn am" onclick="show('login')">Masuk</button></span></header>
+  <section class="hero">
+    <div class="wrap hg">
+      <div>
+        <span class="eyebrow"><i class="dot"></i>SCAN, KOREKSI, ANALISA — SEKETIKA</span>
+        <h1>Koreksi &amp; <em>analisis soal</em> dalam <u>hitungan menit</u></h1>
+        <p>Scan lembar jawaban dengan kamera HP atau input manual. Nilai, ketuntasan, tingkat kesukaran, daya pembeda, dan pengecoh dihitung otomatis.</p>
+        <div class="acts"><button class="btn am lg" onclick="show('login')">Mulai Sekarang <span class="ms">arrow_forward</span></button></div>
+      </div>
+      <div class="prev"><div class="pk"><span>PAS Matematika • VIII-A</span><b>12 / 12 siswa</b></div>
+        <div class="pm"><i>1<s>B</s></i><i>2<s>A</s></i><i>3<s>C</s></i><i>4<s>D</s></i><i>5<s>E</s></i></div>
+        <small>2 butir perlu konfirmasi guru</small></div>
+    </div>
+  </section>
+  <section class="wrap sec"><h2>Semua yang guru butuhkan dalam satu alur</h2>
+    <div class="g3">
+      <div class="card"><span class="ms ic">photo_camera</span><h3>Scan LJK via Kamera HP</h3><p class="mu">Arahkan kamera HP ke LJK: jawaban dan No. Urut terbaca otomatis (OMR), koreksi cepat di layar, arsip ke Drive.</p></div>
+      <div class="card"><span class="ms ic">analytics</span><h3>Analisis Butir Soal</h3><p class="mu">Tingkat kesukaran, daya pembeda, efektivitas pengecoh, reliabilitas.</p></div>
+      <div class="card"><span class="ms ic">table_chart</span><h3>Rekap &amp; Laporan</h3><p class="mu">Rekap per siswa dan per soal, unduh Excel (CSV) atau cetak PDF.</p></div>
+    </div></section>
+</div>
+
+<!-- ═══ LOGIN ═══ -->
+<div id="v-login" class="view" hidden>
+  <div class="lg-box card">
+    <b class="brand">Smart Analisa Baguyo</b><h2>Masuk</h2>
+    <form onsubmit="return doLogin(event)">
+      <label for="un">Username</label><input id="un" autocomplete="username" autocapitalize="none" required placeholder="Username"><label for="pin">Password</label>
+      <input id="pin" type="password" autocomplete="current-password" required placeholder="Password">
+      <button class="btn pri lg" id="bLogin" type="submit">Masuk</button>
+    </form>
+    <button class="btn gh" onclick="show('reg')">Belum punya akun? Daftar</button><button class="btn gh" onclick="show('landing')">← Kembali</button>
+  </div>
+</div>
+
+<!-- ═══ DAFTAR (menunggu persetujuan admin) ═══ -->
+<div id="v-reg" class="view" hidden>
+  <div class="lg-box card"><b class="brand">Smart Analisa Baguyo</b><h2>Daftar Akun</h2><p class="mu">Akun aktif setelah disetujui Superadmin atau Admin.</p>
+    <form onsubmit="return doReg(event)">
+      <label for="rg_n">Nama lengkap</label><input id="rg_n" required maxlength="80" autocomplete="name">
+      <label for="rg_u">Username</label><input id="rg_u" required maxlength="20" autocapitalize="none" autocomplete="username" placeholder="huruf kecil, angka, titik">
+      <label for="rg_e">Email (opsional)</label><input id="rg_e" type="email" maxlength="80">
+      <label for="rg_s">Sekolah</label><input id="rg_s" maxlength="80">
+      <label for="rg_p">Peran</label><select id="rg_p"><option>Guru</option><option>Operator</option></select>
+      <label for="rg_w">Password (min. 8 karakter)</label><input id="rg_w" type="password" minlength="8" required autocomplete="new-password">
+      <button class="btn pri lg" id="bReg" type="submit">Kirim Pendaftaran</button>
+    </form><button class="btn gh" onclick="show('login')">← Sudah punya akun? Masuk</button></div>
+</div>
+
+<!-- ═══ APLIKASI (semua halaman sudah ada di DOM → navigasi 0 ms) ═══ -->
+<div id="v-app" class="view" hidden>
+  <aside class="side"><b class="brand">Smart Analisa<br><small>BAGUYO ASSESSOR</small></b><nav id="navS"></nav>
+    <div class="sf"><button class="nl" onclick="theme()"><span class="ms">dark_mode</span>Mode Gelap</button><button class="nl" onclick="logout()"><span class="ms">logout</span>Keluar</button></div></aside>
+  <div class="main">
+    <header class="top"><div><small class="mu">Ujian aktif</small><select id="selUj" onchange="setCur(this.value)" aria-label="Pilih ujian"></select></div>
+      <div class="tr"><button class="ib" onclick="go('laporan')" aria-label="Laporan"><span class="ms">print</span></button><button class="ib dm" onclick="theme()" aria-label="Mode gelap"><span class="ms">dark_mode</span></button><button id="uName" class="chip" onclick="acctDlg()" aria-label="Akun"></button></div></header>
+    <main>
+      <section id="p-dashboard" class="pg"></section><section id="p-ujian" class="pg"></section>
+      <section id="p-scan" class="pg"></section><section id="p-rekap" class="pg"></section>
+      <section id="p-analisis" class="pg"></section><section id="p-siswa" class="pg"></section><section id="p-pengguna" class="pg"></section><section id="p-laporan" class="pg"></section>
+    </main>
+  </div>
+  <nav id="navB" class="bot"></nav>
+</div>
+
+<div id="mdl" hidden onclick="if(event.target===this)closeModal()"><div class="mbox" role="dialog" aria-modal="true" aria-labelledby="mT"><div class="row"><h3 id="mT"></h3><button class="ib" onclick="closeModal()" aria-label="Tutup"><span class="ms">close</span></button></div><div id="mB"></div></div></div>
+<div id="ljkPrint" aria-hidden="true"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+/* Penjaga galat: layar tidak pernah kosong tanpa penjelasan */
+(function(){function bar(m){var d=document.getElementById('errbar');if(!d){d=document.createElement('div');d.id='errbar';d.className='sysbar';d.style.cursor='pointer';d.onclick=function(){d.remove();};document.body.appendChild(d);}d.textContent=m+' (ketuk untuk menutup)';}
+window.addEventListener('error',function(e){bar('Galat skrip: '+(e.message||'tidak diketahui')+' (baris '+(e.lineno||'?')+')');});
+window.addEventListener('unhandledrejection',function(e){bar('Galat: '+((e.reason&&e.reason.message)||e.reason));});
+window.addEventListener('load',function(){setTimeout(function(){if(typeof show!=='function')bar('Skrip aplikasi belum termuat. Pastikan folder js/ (config.js, api.js, omr.js, app.js) ikut ter-upload.');},1500);});})();
+</script>
+<script defer src="js/config.js"></script>
+<script defer src="js/api.js"></script>
+<script defer src="js/omr.js"></script>
+<script defer src="js/app.js"></script>
+</body>
+</html>

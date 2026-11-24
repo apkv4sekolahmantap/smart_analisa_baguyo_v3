@@ -1,0 +1,99 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Scan LJK — Smart Analisa Baguyo</title>
+<style>*{box-sizing:border-box;margin:0}body{font:15px/1.5 system-ui,sans-serif;background:#1B0A07;color:#FFEDEA;min-height:100vh;padding:max(8px,env(safe-area-inset-top)) 12px 24px}[hidden]{display:none!important}
+header{display:flex;justify-content:space-between;align-items:center;padding:10px 4px;font-weight:700;gap:8px}#prog{background:#4A1A12;border-radius:99px;padding:2px 12px;color:#F5B94E;white-space:nowrap}
+#cam{position:relative;border-radius:20px;overflow:hidden;background:#000;min-height:160px}#vid{width:100%;display:block}#ov{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.bar{display:flex;gap:8px;align-items:center;margin:12px 0}select{flex:1;min-height:48px;border-radius:10px;border:1px solid #4A2A24;background:#2A1410;color:inherit;padding:0 10px;font:inherit;min-width:0}
+button{min-height:48px;border:0;border-radius:99px;padding:0 20px;font:700 15px system-ui;background:#F5B94E;color:#2A1410;cursor:pointer}button.g{background:#4A1A12;color:#fff}button:disabled{opacity:.5}
+#st{min-height:44px;color:#E8D5CE;font-weight:600}#st.o{color:#7fe3bf}#st.w{color:#F5B94E}.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}label.a{display:flex;gap:6px;align-items:center;font-size:13px;white-space:nowrap}label.a input{width:20px;height:20px;accent-color:#F5B94E}
+#res{background:#2A1410;border:1px solid #4A2A24;border-radius:16px;padding:14px;margin-top:12px}#res h3{font-size:16px;margin-bottom:6px}.tgs{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.tg{border-radius:99px;padding:2px 10px;font-size:12px;font-weight:700;background:#4A1A12}.tg.ok{background:#0b7a58}.tg.wr{background:#8a5a0a}
+.fx{display:flex;align-items:center;gap:6px;padding:6px 0;border-top:1px solid #4A2A24;flex-wrap:wrap}.fx b{width:30px;color:#F5B94E;text-align:right}.fx button{min-height:40px;width:40px;padding:0;border-radius:50%;background:#4A1A12;color:#fff}.fx button.on{background:#F5B94E;color:#2A1410}.fx small{color:#D9B8B0;margin-left:auto}
+#thumb{width:100%;border-radius:10px;margin-top:8px}</style></head><body>
+<header><a href="index.html#/scan" style="color:#F5B94E;text-decoration:none" aria-label="Kembali ke aplikasi">←</a><span id="ttl">Scan LJK</span><span id="prog"></span></header>
+<div id="cam" hidden><video id="vid" playsinline muted></video><canvas id="ov"></canvas></div>
+<div class="bar"><select id="sel" aria-label="Siswa"></select><label class="a"><input type="checkbox" id="auto" checked>Auto</label></div>
+<p id="st">Memuat…</p>
+<div class="row"><button id="bStart" hidden>Mulai Kamera</button><button id="bShot" class="g" hidden>Ambil Sekarang</button></div>
+<div id="res" hidden></div>
+<script defer src="js/config.js"></script><script defer src="js/api.js"></script><script defer src="js/omr.js"></script>
+<script defer>
+/* ═════════ Halaman scanner (hosting terpisah, mis. GitHub Pages) ═════════ */
+const HS = new URLSearchParams(location.hash.slice(1)), UJ = HS.get('u'), $ = i => document.getElementById(i);
+try { Auth.token = HS.get('t') || localStorage.getItem('sab_t') || ''; } catch (e) { Auth.token = HS.get('t') || ''; }   // satu origin dengan aplikasi → token dibaca dari penyimpanan browser
+const st = (m, c) => { $('st').textContent = m; $('st').className = c || ''; };
+let D = null, cur = null, stream = null, loop = 0, busy = false, okN = 0, lastC = null, pend = null, cool = 0, lc = null;
+async function init() {
+  if (!API_OK) return st('API_URL belum diisi di js/config.js.', 'w');
+  if (!Auth.token || !UJ) return st('Belum masuk. Buka dari aplikasi: menu Input & Scan → Scan Kamera Penuh.', 'w');
+  try {
+    const r = await api('scanData', { ujian: UJ });
+    if (!r.success) return st(r.code === 'AUTH' ? 'Sesi berakhir. Masuk ulang di aplikasi.' : r.message, 'w');
+    D = r.data; $('ttl').textContent = D.nama + ' • ' + D.kelas; nextS(); draw(); $('bStart').hidden = false; st('Ketuk Mulai Kamera, lalu arahkan ke LJK sampai 4 kotak hitam sudut terlihat.');
+  } catch (e) { st('Tidak dapat terhubung ke server. Periksa internet lalu muat ulang.', 'w'); }
+}
+function nextS() { const n = D.siswa.find(s => !s.done); if (n) cur = n.id; else if (!cur && D.siswa[0]) cur = D.siswa[0].id; }
+function draw() { $('prog').textContent = D.siswa.filter(s => s.done).length + '/' + D.siswa.length; const s = $('sel'); s.innerHTML = ''; D.siswa.forEach((x, i) => s.add(new Option((x.done ? '✓ ' : '') + (i + 1) + '. ' + x.nama, x.id))); s.value = cur; }
+$('sel').onchange = e => { cur = e.target.value; };
+$('bStart').onclick = async () => {
+  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return st('Halaman ini tidak diizinkan memakai kamera. Buka lewat alamat HTTPS (GitHub Pages), bukan file lokal atau http.', 'w');
+  try {
+    const tries = [{ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }, { video: { facingMode: 'environment' }, audio: false }, { video: true, audio: false }];
+    let err = null; for (const c of tries) { try { stream = await navigator.mediaDevices.getUserMedia(c); err = null; break; } catch (e) { err = e; if (['NotAllowedError', 'NotFoundError', 'NotReadableError', 'SecurityError'].includes(e.name)) break; } }
+    if (!stream) throw err || new Error('x');
+    try { await stream.getVideoTracks()[0].applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
+    const v = $('vid'); v.srcObject = stream; await v.play(); $('cam').hidden = false; $('bStart').hidden = true; $('bShot').hidden = false; okN = 0; tick(); st('Arahkan ke LJK…');
+  } catch (e) { st({ NotAllowedError: 'Izin kamera ditolak. Izinkan kamera untuk situs ini di pengaturan browser, lalu muat ulang.', NotFoundError: 'Perangkat tidak punya kamera.', NotReadableError: 'Kamera sedang dipakai aplikasi lain.' }[e.name] || 'Kamera tidak tersedia (' + (e.name || '?') + '). Pastikan halaman dibuka lewat HTTPS.', 'w'); }
+};
+function guide(det, w, h) {
+  const o = $('ov'); o.width = w; o.height = h; const c = o.getContext('2d'); c.lineWidth = 3;
+  if (det) { c.strokeStyle = '#34B38A'; c.fillStyle = 'rgba(52,179,138,.18)'; c.beginPath(); det.pts.forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)); c.closePath(); c.fill(); c.stroke(); }
+  else { const mh = Math.min(h * 0.92, w * 0.7 * 1.414), bw = mh / 1.414; c.strokeStyle = 'rgba(255,255,255,.7)'; c.setLineDash([10, 8]); c.strokeRect((w - bw) / 2, (h - mh) / 2, bw, mh); }
+}
+function tick() {
+  if (!stream) return; const v = $('vid');
+  if (v.videoWidth && !busy) {
+    const w = 480, h = Math.round(w * v.videoHeight / v.videoWidth); lc = lc || document.createElement('canvas'); lc.width = w; lc.height = h; const x = lc.getContext('2d', { willReadFrequently: true }); x.drawImage(v, 0, 0, w, h);
+    let det = null; try { det = findMarkers(toGray(x.getImageData(0, 0, w, h)), w); } catch (e) {} guide(det, w, h);
+    if (!det) { okN = 0; lastC = null; st('Arahkan ke LJK — 4 kotak hitam sudut harus terlihat'); }
+    else if (det.frac < 0.28) { okN = 0; st('Dekatkan kamera sampai LJK memenuhi layar', 'w'); }
+    else { const c = det.pts.reduce((a, p) => ({ x: a.x + p.x / 4, y: a.y + p.y / 4 }), { x: 0, y: 0 }); okN = lastC && Math.hypot(c.x - lastC.x, c.y - lastC.y) < w * 0.02 ? okN + 1 : 1; lastC = c;
+      if (pend) st('Periksa hasil di bawah, lalu Simpan atau Ulangi', 'o');
+      else if (okN >= 5 && Date.now() > cool) { st('Membaca…', 'o'); return shot(); }
+      else st('LJK terdeteksi — tahan stabil…', 'o'); }
+  }
+  loop = setTimeout(tick, 250);
+}
+$('bShot').onclick = () => shot();
+function shot() {
+  if (busy) return; busy = true; const v = $('vid'), r = Math.min(1, 1600 / Math.max(v.videoWidth, v.videoHeight)), c = document.createElement('canvas'); c.width = Math.round(v.videoWidth * r); c.height = Math.round(v.videoHeight * r); c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+  setTimeout(() => { try { const res = scanGray(toGray(c.getContext('2d').getImageData(0, 0, c.width, c.height)), D.n); if (!res.ok) { st(res.why, 'w'); } else show(res); } catch (e) { st('Gagal membaca: ' + e.message, 'w'); } finally { busy = false; if (stream && !pend) { clearTimeout(loop); loop = setTimeout(tick, 400); } } }, 20);
+}
+function show(r) {
+  const ss = D.siswa; let who = '';
+  if (r.noUrut !== null && r.noUrut >= 1 && r.noUrut <= ss.length) { cur = ss[r.noUrut - 1].id; who = 'No. Urut ' + r.noUrut + ' → ' + ss[r.noUrut - 1].nama; } else who = 'No. Urut tidak terbaca — memakai siswa terpilih: ' + (ss.find(s => s.id === cur) || {}).nama;
+  const cv = document.createElement('canvas'); cv.width = r.wg.w; cv.height = r.wg.h; const cx = cv.getContext('2d'), im = cx.createImageData(r.wg.w, r.wg.h);
+  for (let i = 0, j = 0; i < r.wg.d.length; i++, j += 4) { im.data[j] = im.data[j + 1] = im.data[j + 2] = r.wg.d[i]; im.data[j + 3] = 255; } cx.putImageData(im, 0, 0);
+  const jpg = cv.toDataURL('image/jpeg', 0.55), ans = {}, flag = {}; r.q.forEach((q, i) => { if (q.a) ans[i + 1] = q.a; if (q.st !== 'ok') flag[i + 1] = q.st; });
+  const P = TPL.PX; cx.lineWidth = 3; r.q.forEach((q, k) => OPT.forEach((l, j) => { if (q.a === l) { const p = qXY(k, j); cx.fillStyle = q.st === 'ok' ? 'rgba(52,179,138,.55)' : 'rgba(245,185,78,.7)'; cx.beginPath(); cx.arc(p[0] * P, p[1] * P, TPL.R * P, 0, 7); cx.fill(); } }));
+  pend = { ans: ans, flag: flag, jpg: jpg, ov: cv.toDataURL('image/jpeg', 0.6), who: who, lc: r.lowContrast }; navigator.vibrate && navigator.vibrate(60); paint();
+  const bad = Object.keys(flag).filter(k => flag[k] !== 'kosong').length; if ($('auto').checked && !bad && Object.keys(ans).length) save();
+}
+function paint() {
+  const p = pend, ks = Object.keys(p.flag), bad = ks.filter(k => p.flag[k] !== 'kosong'), n = D.n, rs = $('res'); rs.hidden = false;
+  rs.innerHTML = '<h3>' + p.who + '</h3><div class="tgs"><span class="tg ok">' + (n - ks.length) + ' terbaca</span><span class="tg wr">' + bad.length + ' perlu dicek</span><span class="tg">' + (ks.length - bad.length) + ' kosong</span></div>' + (p.lc ? '<p style="color:#F5B94E">Foto kurang kontras — periksa teliti atau foto ulang.</p>' : '')
+    + ks.map(k => '<div class="fx"><b>' + k + '</b>' + ['A', 'B', 'C', 'D', 'E'].map(l => '<button data-k="' + k + '" data-l="' + l + '" class="' + (p.ans[k] === l ? 'on' : '') + '">' + l + '</button>').join('') + '<small>' + p.flag[k] + '</small></div>').join('')
+    + '<img id="thumb" alt="Hasil bacaan" src="' + p.ov + '"><div class="row"><button id="bSave">Simpan &amp; Lanjut</button><button class="g" id="bRe">Ulangi</button></div>';
+  rs.querySelectorAll('.fx button').forEach(b => b.onclick = () => { const k = b.dataset.k, l = b.dataset.l; if (p.ans[k] === l) delete p.ans[k]; else p.ans[k] = l; p.flag[k] = 'diperbaiki'; paint(); });
+  $('bSave').onclick = save; $('bRe').onclick = () => { pend = null; rs.hidden = true; cool = Date.now() + 1500; okN = 0; };
+}
+async function save() {
+  if (!pend) return; const p = pend, sid = cur, s = D.siswa.find(a => a.id === sid); $('bSave') && ($('bSave').disabled = true); st('Menyimpan ' + s.nama + '…', 'o');
+  try {
+    const x = await api('saveJawaban', { ujian: UJ, sid: sid, ans: p.ans, sumber: 'Scan' }); if (!x.success) throw new Error(x.message);
+    s.done = true; navigator.vibrate && navigator.vibrate(80); api('uploadFoto', { ujian: UJ, sid: sid, b64: p.jpg.split(',')[1] });
+    pend = null; $('res').hidden = true; cool = Date.now() + 2500; okN = 0; const n = D.siswa.find(a => !a.done); cur = n ? n.id : sid; draw();
+    st(n ? '✓ ' + s.nama + ' tersimpan. Ganti lembar berikutnya.' : '✓ Semua siswa sudah terkoreksi. Kembali ke aplikasi.', 'o');
+  } catch (e) { st('Gagal menyimpan: ' + e.message + '. Ketuk Simpan untuk mencoba lagi.', 'w'); $('bSave') && ($('bSave').disabled = false); }
+}
+window.addEventListener('error', e => st('Galat: ' + e.message, 'w'));
+init();
+</script></body></html>
