@@ -305,19 +305,44 @@ function doReg(e) {
     () => { b.disabled = false; $('rg_w').value = ''; show('login'); toast('Pendaftaran terkirim. Tunggu persetujuan admin.'); }, () => b.disabled = false);
   return false;
 }
-let imp = [];
+let imp = [], selS = {};
 function rSiswa() {
   const ks = [...new Set(S.siswa.map(s => s.Kelas))].sort();
-  $('p-siswa').innerHTML = `<h2>Data Siswa</h2><div class="card"><h3>Impor Massal</h3><p class="mu">Tempel dari Excel atau unggah CSV. Kolom: NIS, Nama, Kelas (kelas boleh kosong jika diisi sebagai kelas bawaan). Maks 500 baris per impor.</p>
+  $('p-siswa').innerHTML = `<h2>Data Siswa</h2><div class="card"><h3>Tambah Siswa Manual</h3><div class="row"><input id="as_n" placeholder="NIS" maxlength="20" inputmode="numeric" autocomplete="off"><input id="as_m" placeholder="Nama lengkap" maxlength="80" autocomplete="off"><input id="as_k" placeholder="Kelas (mis. VIII-A)" maxlength="20" list="as_kl" autocomplete="off"><datalist id="as_kl">${ks.map(k => `<option value="${esc(k)}">`).join('')}</datalist><button class="btn pri" id="as_b" onclick="addSis()"><span class="ms">person_add</span>Tambah</button></div></div>
+  <div class="card"><h3>Impor Massal</h3><p class="mu">Tempel dari Excel atau unggah CSV. Kolom: NIS, Nama, Kelas (kelas boleh kosong jika diisi sebagai kelas bawaan). Maks 500 baris per impor.</p>
   <div class="row" style="margin:8px 0"><input id="im_k" placeholder="Kelas bawaan (mis. VIII-A)" oninput="preSis()"><label class="btn gh" style="margin:0;border:1px solid var(--bd)"><span class="ms">upload_file</span>Unggah CSV<input type="file" accept=".csv,.txt" hidden onchange="fileSis(this)"></label><button class="btn gh" onclick="tplSis()"><span class="ms">download</span>Template</button></div>
   <textarea id="im_t" rows="6" aria-label="Data siswa" placeholder="2024001 [tab] Andi Pratama [tab] VIII-A" style="width:100%;border:1px solid var(--bd);border-radius:8px;padding:8px;background:var(--card)" oninput="preSis()"></textarea><div id="im_p"></div></div>
-  <div class="row" style="margin-bottom:8px"><input id="sq" placeholder="Cari nama / NIS…" oninput="drawSis()"><select id="sk" onchange="drawSis()" aria-label="Filter kelas"><option value="">Semua kelas</option>${ks.map(k => `<option>${esc(k)}</option>`).join('')}</select></div>
-  <div class="tw"><table><thead><tr><th>NIS</th><th>Nama</th><th>Kelas</th></tr></thead><tbody id="sbd"></tbody></table></div><p id="scnt" class="mu"></p>`; drawSis();
+  <div class="row" style="margin-bottom:8px"><input id="sq" placeholder="Cari nama / NIS…" oninput="drawSis()"><select id="sk" onchange="drawSis()" aria-label="Filter kelas"><option value="">Semua kelas</option>${ks.map(k => `<option>${esc(k)}</option>`).join('')}</select><button class="btn gh" id="bDelSel" onclick="askDel(Object.keys(selS))" style="border:1px solid var(--bd)"><span class="ms">delete</span><span id="nSel">Hapus terpilih</span></button></div>
+  <div class="tw"><table><thead><tr><th style="width:44px"><input type="checkbox" style="min-height:20px;width:20px" aria-label="Pilih semua" onchange="selAllSis(this)"></th><th>NIS</th><th>Nama</th><th>Kelas</th><th style="width:56px">Aksi</th></tr></thead><tbody id="sbd"></tbody></table></div><p id="scnt" class="mu"></p>`; drawSis();
 }
 function drawSis() {
   const q = $('sq').value.toLowerCase(), k = $('sk').value, r = S.siswa.filter(s => (!k || s.Kelas === k) && (String(s.Nama).toLowerCase().includes(q) || String(s.NIS).includes(q)));
-  $('sbd').innerHTML = r.slice(0, 200).map(s => `<tr><td>${esc(s.NIS)}</td><td>${esc(s.Nama)}</td><td>${esc(s.Kelas)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Belum ada siswa.</td></tr>';
-  $('scnt').textContent = r.length > 200 ? 'Menampilkan 200 dari ' + r.length + ' siswa.' : r.length + ' siswa.';
+  $('sbd').innerHTML = r.slice(0, 200).map(s => `<tr><td><input type="checkbox" style="min-height:20px;width:20px" ${selS[s.ID] ? 'checked' : ''} onchange="selSis(this,'${esc(s.ID)}')" aria-label="Pilih ${esc(s.Nama)}"></td><td>${esc(s.NIS)}</td><td>${esc(s.Nama)}</td><td>${esc(s.Kelas)}</td><td><button class="btn gh" style="min-height:36px;padding:0 10px" onclick="askDel(['${esc(s.ID)}'])" aria-label="Hapus ${esc(s.Nama)}"><span class="ms">delete</span></button></td></tr>`).join('') || '<tr><td colspan="5" class="empty">Belum ada siswa.</td></tr>';
+  $('scnt').textContent = r.length > 200 ? 'Menampilkan 200 dari ' + r.length + ' siswa.' : r.length + ' siswa.'; cntSel();
+}
+function cntSel() { const n = Object.keys(selS).length; $('nSel').textContent = n ? 'Hapus terpilih (' + n + ')' : 'Hapus terpilih'; $('bDelSel').disabled = !n; }
+function selSis(c, id) { if (c.checked) selS[id] = 1; else delete selS[id]; cntSel(); }
+function selAllSis(c) { const q = $('sq').value.toLowerCase(), k = $('sk').value; S.siswa.filter(s => (!k || s.Kelas === k) && (String(s.Nama).toLowerCase().includes(q) || String(s.NIS).includes(q))).slice(0, 200).forEach(s => { if (c.checked) selS[s.ID] = 1; else delete selS[s.ID]; }); drawSis(); }
+function addSis() {
+  const g = i => $(i).value.trim(), o = { nis: g('as_n'), nama: g('as_m'), kelas: g('as_k') };
+  if (!o.nis || o.nama.length < 2 || !o.kelas) return toast('Isi NIS, nama, dan kelas.', 1);
+  if (S.siswa.some(s => String(s.NIS) === o.nis)) return toast('NIS ' + o.nis + ' sudah terdaftar.', 1);
+  const b = $('as_b'); b.disabled = true;
+  run('addSiswa', o, d => { S.siswa.push(d.siswa); persist(); rSiswa(); $('as_k').value = o.kelas; $('as_n').focus(); toast('Siswa ditambahkan: ' + o.nama); }, () => { b.disabled = false; });
+}
+let delIds = [];
+function askDel(ids) {
+  delIds = ids.filter(id => S.siswa.some(s => s.ID === id)); if (!delIds.length) return toast('Pilih siswa dulu.', 1);
+  const nm = delIds.slice(0, 5).map(id => esc(nmS(id))).join(', ') + (delIds.length > 5 ? ' dan ' + (delIds.length - 5) + ' lainnya' : ''), nj = delIds.filter(id => Object.keys(S.jaw).some(e => S.jaw[e][id])).length;
+  openModal('Hapus siswa?', `<p>Hapus <b>${delIds.length} siswa</b>: ${nm}.</p>${nj ? `<p class="wc" style="margin-top:8px">${nj} siswa sudah punya jawaban — jawaban &amp; nilainya ikut terhapus permanen.</p>` : ''}<p class="mu" style="margin-top:8px">No. Urut siswa lain di kelas bisa bergeser; cetak ulang LJK bila perlu. Tindakan ini tidak dapat dibatalkan.</p>
+  <div class="row" style="margin-top:12px"><button class="btn pri" id="bDel" onclick="doDel()"><span class="ms">delete</span>Ya, hapus</button><button class="btn gh" onclick="closeModal()">Batal</button></div>`);
+}
+function doDel() {
+  const ids = delIds.slice(), b = $('bDel'); b.disabled = true;
+  run('deleteSiswa', { ids: ids }, d => {
+    const set = {}; ids.forEach(i => set[i] = 1); S.siswa = S.siswa.filter(s => !set[s.ID]); Object.keys(S.jaw).forEach(e => ids.forEach(i => delete S.jaw[e][i])); selS = {};
+    persist(); closeModal(); if (S.page === 'siswa') rSiswa(); toast(d.deleted + ' siswa dihapus.'); refresh(true);   // segarkan analisis dari server
+  }, () => { b.disabled = false; });
 }
 function parseSis(txt, kd) { const NL = String.fromCharCode(10), CR = String.fromCharCode(13), Q = String.fromCharCode(34), sp = new RegExp('[' + String.fromCharCode(9) + ';,]'); return txt.split(NL).map(l => l.split(CR).join('').trim()).filter(Boolean).map(l => { const c = l.split(sp).map(x => { x = x.trim(); return x.charAt(0) === Q && x.charAt(x.length - 1) === Q ? x.slice(1, -1) : x; }); return { nis: c[0], nama: c[1], kelas: c[2] || kd }; }).filter(r => String(r.nis).toLowerCase() !== 'nis'); }
 function preSis() {
