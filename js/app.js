@@ -2,7 +2,7 @@
 const $ = i => document.getElementById(i), LET = ['A', 'B', 'C', 'D', 'E'], LS_C = 'sab:v3:c';
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
 const S = { t: null, user: null, ujian: [], siswa: [], kunci: [], jaw: {}, an: {}, cur: null, sid: null, draft: {}, kd: [], foto: null, page: 'dashboard', q: '', fs: '', st: {}, scanFor: null, pending: false, auto: true, ovUrl: '', bootT: 0, h: '', pw: 0 };
-const NAV = [['dashboard', 'Dashboard', 'dashboard'], ['ujian', 'Ujian & Kunci', 'key'], ['scan', 'Input & Scan', 'document_scanner'], ['rekap', 'Rekap Nilai', 'format_list_numbered'], ['analisis', 'Analisis Soal', 'analytics'], ['siswa', 'Data Siswa', 'groups'], ['laporan', 'Laporan', 'print'], ['pengguna', 'Pengguna', 'admin_panel_settings']];
+const NAV = [['dashboard', 'Dashboard', 'dashboard'], ['ujian', 'Ujian & Soal', 'key'], ['scan', 'Input & Scan', 'document_scanner'], ['rekap', 'Rekap Nilai', 'format_list_numbered'], ['analisis', 'Analisis Soal', 'analytics'], ['siswa', 'Data Siswa', 'groups'], ['laporan', 'Laporan', 'print'], ['pengguna', 'Pengguna', 'admin_panel_settings']];
 const ROLE = { Operator: ['dashboard', 'rekap', 'analisis', 'laporan'], Guru: ['dashboard', 'ujian', 'scan', 'rekap', 'analisis', 'siswa', 'laporan'] };   // Admin & Superadmin: semua menu
 let tm, stream;
 
@@ -29,11 +29,17 @@ const empty = m => `<div class="card empty"><span class="ms">inbox</span><p>${m}
 
 // ── Data helpers (semua lokal → instan) ──
 const U = id => S.ujian.find(x => x.ID === id);
-const KS = id => S.kunci.filter(k => k.IDUjian === id && k.Tipe === 'PG').sort((a, b) => a.No - b.No);
+const KA = id => S.kunci.filter(k => k.IDUjian === id).sort((a, b) => a.No - b.No);
+const KS = id => KA(id).filter(k => k.Tipe === 'PG');
 const SIS = id => { const u = U(id); return S.siswa.filter(s => u && s.Kelas === u.Kelas && s.Status === 'Aktif'); };
+const specOf = id => { const o = { pg: 0, isi: [], ura: [] }; KA(id).forEach(k => { if (k.Tipe === 'PG') o.pg++; else if (k.Tipe === 'Isian') o.isi.push(+k.Bobot); else o.ura.push(+k.Bobot); }); return o; };
+const r2 = x => Math.round(x * 100) / 100;
+/** Skor satu butir: PG = bobot bila benar; Isian/Uraian = skor yang diberikan guru (0..skor maks). Sama persis dengan server. */
+function sk(k, v) { if (v === undefined || v === '' || v === null) return 0; if (k.Tipe === 'PG') return String(v) === k.Kunci ? +k.Bobot : 0; const x = +v; return isNaN(x) ? 0 : Math.max(0, Math.min(+k.Bobot, x)); }
 function nilai(id, sid) {
-  const a = (S.jaw[id] || {})[sid]; if (!a) return null; let v = 0, b = 0;
-  KS(id).forEach(k => { if (a[k.No] === k.Kunci) { v += +k.Bobot; b++; } }); return { b: b, n: Math.round(v * 10) / 10 };
+  const a = (S.jaw[id] || {})[sid]; if (!a) return null; let v = 0, b = 0, t = 0, mx = 0; const ks = KA(id);
+  ks.forEach(k => { const x = a[k.No]; mx += +k.Bobot; if (x !== undefined && x !== '') t++; const q = sk(k, x); v += q; if (k.Tipe === 'PG' && q > 0) b++; });
+  return { b: b, skor: r2(v), n: Math.round(v / (mx || 1) * 1000) / 10, t: t, total: ks.length, mx: r2(mx) };
 }
 function rows(id) { const kkm = +(U(id) || {}).KKM || 75; return SIS(id).map(s => { const r = nilai(id, s.ID); return { s: s, r: r, ok: !!r && r.n >= kkm }; }); }
 const nmS = id => (S.siswa.find(s => s.ID === id) || {}).Nama || id;
@@ -96,7 +102,7 @@ function rDash() {
   const R = rows(id), d = R.filter(x => x.r), avg = d.length ? d.reduce((a, x) => a + x.r.n, 0) / d.length : 0, tun = d.filter(x => x.ok).length, pct = d.length ? tun / d.length * 100 : 0;
   const bk = [0, 0, 0, 0, 0]; d.forEach(x => bk[x.r.n >= 60 ? Math.min(4, Math.floor(x.r.n / 10) - 5) : 0]++);
   const mx = Math.max(1, ...bk), lb = ['Di bawah 60', '60-69', '70-79', '80-89', '90+'], an = S.an[id], ins = [];
-  if (an && an.items.length && an.n) { const h = an.items.slice().sort((a, b) => a.p - b.p)[0]; ins.push(`Soal tersulit: nomor ${h.no} (p = ${h.p}).`); ins.push(`${an.items.filter(i => i.kat !== 'Diterima').length} soal perlu revisi atau ditolak.`); }
+  if (an && an.items.length && an.n) { const h = an.items.slice().sort((a, b) => a.p - b.p)[0]; ins.push(`Soal tersulit: butir ${noLabel(h.no)} (p = ${h.p}).`); ins.push(`${an.items.filter(i => i.kat !== 'Diterima').length} soal perlu revisi atau ditolak.`); }
   if (d.length) ins.push(`${d.length - tun} siswa perlu remedial.`);
   el.innerHTML = `<h2>Selamat datang, ${esc(S.user.nama)}</h2>
   <div class="kpis"><div class="card kpi"><span class="mu">Total Ujian</span><b>${S.ujian.length}</b></div><div class="card kpi"><span class="mu">Siswa Terkoreksi</span><b>${d.length}/${R.length}</b></div>
@@ -108,27 +114,71 @@ function rDash() {
     return `<tr class="cl" onclick="setCur('${esc(u.ID)}');fillSel()"><td>${esc(u.Nama)}</td><td>${esc(u.Kelas)}</td><td>${esc(u.Tanggal)}</td><td><div class="prog"><i style="width:${p}%"></i></div>${n}/${r.length}</td></tr>`; }).join('')}</table></div>`;
 }
 
-// ── Ujian & Kunci ──
+// ── Ujian & Soal (PG, Isian, Uraian) ──
+const dfl = t => t === 'PG' ? { tipe: 'PG', kunci: 'A', alt: '', bobot: 1, rubrik: '', materi: '' } : t === 'Isian' ? { tipe: 'Isian', kunci: '', alt: '', bobot: 2, rubrik: '', materi: '' } : { tipe: 'Uraian', kunci: '', alt: '', bobot: 5, rubrik: '', materi: '' };
 function rUjian() {
-  const el = $('p-ujian'), id = S.cur;
-  let h = `<h2>Ujian &amp; Kunci</h2><div class="card"><h3>Buat Ujian Baru</h3><div class="row"><input id="nu_n" placeholder="Nama ujian" maxlength="80"><input id="nu_m" placeholder="Mapel"><input id="nu_k" placeholder="Kelas (mis. VIII-A)"><input id="nu_j" type="number" min="5" max="60" value="20" aria-label="Jumlah soal PG"><button class="btn pri" onclick="buatUjian()">Buat</button></div></div>`;
-  if (id) { S.kd = KS(id).map(k => k.Kunci);
-    h += `<div class="card"><h3>Kunci Pilihan Ganda — ${esc((U(id) || {}).Nama)}</h3><div class="row"><label for="kkm" style="margin:0">KKM</label><input id="kkm" type="number" min="0" max="100" value="${esc((U(id) || {}).KKM)}" style="width:90px">
-    <input id="qk" placeholder="Input cepat, mis. BACDEABCDA" style="text-transform:uppercase"><button class="btn gh" onclick="quick()">Terapkan</button></div><div id="kg"></div><div class="row" style="margin-top:12px"><button class="btn pri" onclick="simpanKunci()">Simpan Kunci</button></div></div>`; }
-  el.innerHTML = h; if (id) drawKg();
+  const el = $('p-ujian'), id = S.cur, nb = u => { const k = KA(u.ID), c = t => k.filter(x => x.Tipe === t).length; return `${c('PG')} PG • ${c('Isian')} isian • ${c('Uraian')} uraian`; };
+  let h = `<h2>Ujian &amp; Soal</h2><div class="card"><h3>Buat Ujian Baru</h3><div class="row"><input id="nu_n" placeholder="Nama ujian" maxlength="80"><input id="nu_m" placeholder="Mapel"><input id="nu_k" placeholder="Kelas (mis. VIII-A)"></div>
+  <div class="row" style="margin-top:8px"><label class="ct">PG<input id="nu_pg" type="number" min="0" max="60" value="20"></label><label class="ct">Isian<input id="nu_is" type="number" min="0" max="20" value="0"></label><label class="ct">Uraian<input id="nu_ur" type="number" min="0" max="10" value="0"></label><button class="btn pri" onclick="buatUjian()">Buat</button></div></div>`;
+  if (S.ujian.length) h += `<div class="card"><h3>Daftar Ujian</h3><div class="tw"><table><tr><th>Ujian</th><th>Kelas</th><th>Soal</th><th style="width:96px">Aksi</th></tr>${S.ujian.map(u => `<tr${u.ID === id ? ' style="background:var(--tint)"' : ''}><td>${esc(u.Nama)}</td><td>${esc(u.Kelas)}</td><td><small class="mu">${nb(u)}</small></td><td><button class="btn gh" style="min-height:36px;padding:0 10px" onclick="setCur('${esc(u.ID)}');fillSel()" aria-label="Pilih ${esc(u.Nama)}"><span class="ms">edit</span></button> <button class="btn gh" style="min-height:36px;padding:0 10px" onclick="askDelUjian('${esc(u.ID)}')" aria-label="Hapus ${esc(u.Nama)}"><span class="ms">delete</span></button></td></tr>`).join('')}</table></div></div>`;
+  if (id) {
+    if (S.itemsFor !== id || !S.itemsDirty) { S.items = KA(id).map(k => ({ tipe: k.Tipe, kunci: k.Kunci || (k.Tipe === 'PG' ? 'A' : ''), alt: k.Alternatif || '', bobot: +k.Bobot, rubrik: k.Rubrik || '', materi: k.Materi || '' })); S.itemsFor = id; S.itemsDirty = false; }
+    const c = t => S.items.filter(x => x.tipe === t).length;
+    h += `<div class="card"><h3>Soal &amp; Kunci — ${esc((U(id) || {}).Nama)}</h3><div class="row"><label for="kkm" class="ct">KKM<input id="kkm" type="number" min="0" max="100" value="${esc((U(id) || {}).KKM)}" oninput="S.itemsDirty=true"></label></div>
+    <div class="row" style="margin-top:8px"><label class="ct">PG<input id="ct_pg" type="number" min="0" max="60" value="${c('PG')}"></label><label class="ct">Isian<input id="ct_is" type="number" min="0" max="20" value="${c('Isian')}"></label><label class="ct">Uraian<input id="ct_ur" type="number" min="0" max="10" value="${c('Uraian')}"></label><button class="btn gh" style="border:1px solid var(--bd)" onclick="setCounts()">Terapkan jumlah</button></div>
+    <small class="mu">Mengurangi jumlah soal menghapus jawaban/skor butir yang dihapus. Nilai akhir = skor diperoleh ÷ total skor maksimal × 100.</small>
+    <div class="row" style="margin-top:8px"><input id="qk" placeholder="Input cepat kunci PG, mis. BACDEABCDA" style="text-transform:uppercase"><button class="btn gh" onclick="quick()">Terapkan</button></div><div id="kg"></div><p id="kTot" class="mu" style="margin-top:8px"></p>
+    <div class="row" style="margin-top:12px"><button class="btn pri" onclick="simpanSoal()">Simpan Soal</button><button class="btn gh" style="border:1px solid var(--bd)" onclick="ljkDlg()"><span class="ms">print</span>Cetak LJK</button></div></div>`;
+  }
+  el.innerHTML = h; if (id) drawSoal();
 }
-function drawKg() { $('kg').innerHTML = S.kd.map((k, i) => `<div class="krow"><b>${i + 1}</b><div class="bub">${LET.map(l => `<button class="b${l === k ? ' on' : ''}" onclick="setK(${i},'${l}',this)" aria-label="No ${i + 1} ${l}">${l}</button>`).join('')}</div></div>`).join(''); }
-function setK(i, l, b) { S.kd[i] = l; b.parentNode.querySelectorAll('.b').forEach(x => x.classList.toggle('on', x === b)); }
-function quick() { const s = $('qk').value.toUpperCase().replace(/[^A-E]/g, ''); S.kd = S.kd.map((k, i) => s[i] || k); drawKg(); toast('Input cepat diterapkan (belum disimpan).'); }
-function simpanKunci() {
-  const id = S.cur, kkm = Math.min(100, Math.max(0, +$('kkm').value || 75)), arr = S.kd.slice();
-  KS(id).forEach((k, i) => k.Kunci = arr[i]); U(id).KKM = kkm; persist(); toast('Kunci tersimpan.');
-  run('saveKunci', { ujian: id, kunci: arr, kkm: kkm }, d => { S.an[id] = d.analisis; persist(); }, () => toast('Belum tersinkron ke server. Simpan ulang.', 1));
+const bobotIn = i => `<label class="sk">skor maks<input type="number" inputmode="decimal" min="0.5" max="99" step="0.5" value="${S.items[i].bobot}" oninput="setIt(${i},'bobot',this.value)"></label>`;
+const txtIn = (i, f, ph, v) => `<input placeholder="${ph}" value="${esc(v)}" maxlength="${f === 'rubrik' ? 400 : 120}" oninput="setIt(${i},'${f}',this.value)" aria-label="${ph}">`;
+function drawSoal() {
+  const T = { PG: [], Isian: [], Uraian: [] }; S.items.forEach((it, i) => T[it.tipe].push(i));
+  let h = '';
+  if (T.PG.length) h += '<h4>Pilihan Ganda</h4>' + T.PG.map((i, n) => `<div class="krow"><b>${n + 1}</b><div class="bub">${LET.map(l => `<button class="b${l === S.items[i].kunci ? ' on' : ''}" onclick="setK(${i},'${l}',this)" aria-label="No ${n + 1} ${l}">${l}</button>`).join('')}</div>${bobotIn(i)}</div>`).join('');
+  if (T.Isian.length) h += '<h4>Isian Singkat</h4>' + T.Isian.map((i, n) => `<div class="krow"><b>I${n + 1}</b>${txtIn(i, 'kunci', 'Kunci jawaban', S.items[i].kunci)}${txtIn(i, 'alt', 'Jawaban lain yang benar (opsional)', S.items[i].alt)}${bobotIn(i)}</div>`).join('');
+  if (T.Uraian.length) h += '<h4>Uraian</h4>' + T.Uraian.map((i, n) => `<div class="krow"><b>U${n + 1}</b>${txtIn(i, 'rubrik', 'Pedoman penskoran / rubrik (opsional)', S.items[i].rubrik)}${bobotIn(i)}</div>`).join('');
+  $('kg').innerHTML = h || '<p class="mu">Belum ada butir soal.</p>'; totSoal();
+}
+function totSoal() { const t = S.items.reduce((a, x) => a + (+x.bobot || 0), 0); const e = $('kTot'); if (e) e.textContent = `${S.items.length} butir • total skor maksimal ${r2(t)}`; }
+function setIt(i, f, v) { S.items[i][f] = f === 'bobot' ? v : v; S.itemsDirty = true; if (f === 'bobot') totSoal(); }
+function setK(i, l, b) { S.items[i].kunci = l; S.itemsDirty = true; b.parentNode.querySelectorAll('.b').forEach(x => x.classList.toggle('on', x === b)); }
+function quick() { const q = $('qk').value.toUpperCase().replace(/[^A-E]/g, ''); let n = 0; S.items.forEach(it => { if (it.tipe === 'PG') { if (q[n]) it.kunci = q[n]; n++; } }); S.itemsDirty = true; drawSoal(); toast('Input cepat diterapkan (belum disimpan).'); }
+function setCounts() {
+  const g = (i, mx) => Math.max(0, Math.min(mx, Math.round(+$(i).value) || 0)), want = { PG: g('ct_pg', 60), Isian: g('ct_is', 20), Uraian: g('ct_ur', 10) }, old = { PG: [], Isian: [], Uraian: [] };
+  S.items.forEach(x => old[x.tipe].push(x)); const out = [];
+  ['PG', 'Isian', 'Uraian'].forEach(t => { for (let i = 0; i < want[t]; i++) out.push(old[t][i] || dfl(t)); });
+  if (!out.length) return toast('Minimal 1 butir soal.', 1); S.items = out; S.itemsDirty = true; drawSoal(); toast('Jumlah soal diterapkan (belum disimpan).');
+}
+function simpanSoal() {
+  const id = S.cur, kkm = Math.min(100, Math.max(0, +$('kkm').value || 75));
+  for (const it of S.items) { const b = +it.bobot; if (!(b > 0 && b <= 99)) return toast('Skor maksimal tiap butir harus 0,5 – 99.', 1); }
+  const items = S.items.map(x => ({ tipe: x.tipe, kunci: x.kunci, alt: x.alt, bobot: +x.bobot, rubrik: x.rubrik, materi: x.materi })), btn = document.activeElement;
+  run('saveSoal', { ujian: id, kkm: kkm, items: items }, d => {
+    S.kunci = S.kunci.filter(k => k.IDUjian !== id).concat(d.kunci); const i = S.ujian.findIndex(u => u.ID === id); if (i >= 0) S.ujian[i] = d.ujian; S.an[id] = d.analisis;
+    const ok = {}; d.kunci.forEach(k => ok[k.No] = 1); Object.keys(S.jaw[id] || {}).forEach(sid => Object.keys(S.jaw[id][sid]).forEach(n => { if (!ok[n]) delete S.jaw[id][sid][n]; }));
+    S.itemsDirty = false; S.scanFor = null; persist(); renderPage(); toast('Soal tersimpan.');
+  }, () => toast('Belum tersimpan di server. Coba simpan lagi.', 1));
 }
 function buatUjian() {
-  const o = { nama: $('nu_n').value.trim(), mapel: $('nu_m').value.trim(), kelas: $('nu_k').value.trim(), jml: $('nu_j').value };
+  const g = i => Math.max(0, Math.round(+$(i).value) || 0), o = { nama: $('nu_n').value.trim(), mapel: $('nu_m').value.trim(), kelas: $('nu_k').value.trim(), pg: g('nu_pg'), isian: g('nu_is'), uraian: g('nu_ur') };
   if (!o.nama || !o.kelas) return toast('Isi nama ujian dan kelas.', 1);
-  run('createUjian', o, d => { S.ujian.push(d.ujian); S.kunci = S.kunci.concat(d.kunci); S.cur = d.ujian.ID; S.an[d.ujian.ID] = { items: [], rel: 0, n: 0 }; persist(); fillSel(); renderPage(); toast('Ujian dibuat. Atur kunci di bawah.'); });
+  if (o.pg + o.isian + o.uraian < 1) return toast('Minimal 1 butir soal.', 1);
+  run('createUjian', o, d => { S.ujian.push(d.ujian); S.kunci = S.kunci.concat(d.kunci); S.cur = d.ujian.ID; S.an[d.ujian.ID] = { items: [], rel: 0, n: 0 }; S.itemsFor = null; persist(); fillSel(); renderPage(); toast('Ujian dibuat. Atur kunci & skor di bawah.'); });
+}
+function askDelUjian(id) {
+  const u = U(id); if (!u) return; const n = Object.keys(S.jaw[id] || {}).length;
+  openModal('Hapus ujian?', `<p>Hapus ujian <b>${esc(u.Nama)}</b> (${esc(u.Kelas)})?</p><p class="wc" style="margin-top:8px">Kunci soal, ${n} siswa yang sudah dikoreksi beserta jawaban, skor, nilai, dan hasil analisisnya ikut terhapus permanen. Foto LJK di Drive dipindah ke tempat sampah. Tindakan ini tidak dapat dibatalkan.</p>
+  <div class="row" style="margin-top:12px"><button class="btn pri" id="bDelU" onclick="doDelUjian('${esc(id)}')"><span class="ms">delete</span>Ya, hapus ujian</button><button class="btn gh" onclick="closeModal()">Batal</button></div>`);
+}
+function doDelUjian(id) {
+  const b = $('bDelU'); b.disabled = true;
+  run('deleteUjian', { ujian: id }, () => {
+    stopCam(); S.ujian = S.ujian.filter(u => u.ID !== id); S.kunci = S.kunci.filter(k => k.IDUjian !== id); delete S.jaw[id]; delete S.an[id];
+    if (S.cur === id) { S.cur = S.ujian[0] ? S.ujian[0].ID : null; S.sid = null; } S.scanFor = null; S.itemsFor = null; S.itemsDirty = false; persist(); closeModal(); fillSel(); renderPage(); toast('Ujian dihapus.');
+  }, () => { b.disabled = false; });
 }
 
 
@@ -167,20 +217,30 @@ function refreshScan() {
 }
 function pickSis(v) { S.sid = v; loadDraft(); refreshScan(); }
 function drawCorr() {
-  const id = S.cur, ks = KS(id), bad = ks.filter(k => S.st[k.No] === 'ragu' || S.st[k.No] === 'ganda').length, kos = ks.filter(k => S.st[k.No] === 'kosong').length;
-  $('cc').innerHTML = `<h3>Koreksi Jawaban</h3><p class="mu" style="margin-bottom:8px">Ketuk huruf untuk mengubah; ketuk lagi untuk menghapus.${bad ? ` <b class="wc">${bad} nomor perlu dicek (ditandai).</b>` : ''}${kos ? ` ${kos} nomor kosong.` : ''}</p>`
-    + ks.map(k => { const s = S.st[k.No] || '', lb = { ragu: 'ragu-ragu', ganda: 'jawaban ganda', kosong: 'kosong' }[s];
-      return `<div class="krow ${s}" id="kr${k.No}"><b>${k.No}</b><div class="bub">${LET.map(l => `<button class="b${S.draft[k.No] === l ? ' on' : ''}" onclick="setA(${k.No},'${l}',this)" aria-label="No ${k.No} ${l}">${l}</button>`).join('')}</div>${lb ? `<small class="fl">${lb}</small>` : ''}</div>`; }).join('')
-    + `<div class="row" style="margin-top:12px"><button class="btn pri lg" onclick="simpan()">Simpan &amp; Lanjut <span class="ms">arrow_forward</span></button></div>`;
+  const id = S.cur, ks = KA(id), pg = ks.filter(k => k.Tipe === 'PG'), ot = ks.filter(k => k.Tipe !== 'PG'), bad = ks.filter(k => S.st[k.No] === 'ragu' || S.st[k.No] === 'ganda').length, kos = pg.filter(k => S.st[k.No] === 'kosong').length;
+  const lbl = { ragu: 'ragu-ragu', ganda: 'terisi ganda', kosong: 'kosong' };
+  let h = `<h3>Koreksi Jawaban &amp; Skor</h3><p class="mu" style="margin-bottom:8px">Ketuk huruf untuk mengubah (ketuk lagi untuk menghapus); isi kotak skor untuk butir isian/uraian.${bad ? ` <b class="wc">${bad} butir perlu dicek (ditandai).</b>` : ''}${kos ? ` ${kos} nomor PG kosong.` : ''}</p>`;
+  h += pg.map(k => { const s = S.st[k.No] || '', lb = lbl[s];
+    return `<div class="krow ${s}" id="kr${k.No}"><b>${k.No}</b><div class="bub">${LET.map(l => `<button class="b${S.draft[k.No] === l ? ' on' : ''}" onclick="setA(${k.No},'${l}',this)" aria-label="No ${k.No} ${l}">${l}</button>`).join('')}</div>${lb ? `<small class="fl">${lb}</small>` : ''}</div>`; }).join('');
+  if (ot.length) h += '<h4>Isian &amp; Uraian — skor tiap butir</h4>' + ot.map(k => { const s = S.st[k.No] || '', lb = lbl[s], v = S.draft[k.No];
+    const hint = k.Tipe === 'Isian' ? (k.Kunci ? `Kunci: ${esc(k.Kunci)}${k.Alternatif ? ' / ' + esc(k.Alternatif) : ''}` : '') : esc(k.Rubrik || '');
+    return `<div class="krow ${s}" id="kr${k.No}"><b>${noLabel(k.No)}</b><label class="sk" style="margin:0"><input type="number" inputmode="decimal" min="0" max="${+k.Bobot}" step="0.5" value="${v === undefined ? '' : v}" oninput="setS(${k.No},this.value)" aria-label="Skor ${noLabel(k.No)}"> / ${+k.Bobot}</label>${hint ? `<small class="mu" style="flex:1 1 100%">${hint}</small>` : ''}${lb ? `<small class="fl">${lb}</small>` : ''}</div>`; }).join('');
+  $('cc').innerHTML = h + `<div class="row" style="margin-top:12px"><button class="btn pri lg" onclick="simpan()">Simpan &amp; Lanjut <span class="ms">arrow_forward</span></button></div>`;
 }
+function clrSt(no) { delete S.st[no]; const r = $('kr' + no); if (r) { r.className = 'krow'; const f = r.querySelector('.fl'); if (f) f.remove(); } }
 function setA(no, l, b) {
   if (S.draft[no] === l) { delete S.draft[no]; b.classList.remove('on'); } else { S.draft[no] = l; b.parentNode.querySelectorAll('.b').forEach(x => x.classList.toggle('on', x === b)); }
-  delete S.st[no]; const r = $('kr' + no); if (r) { r.className = 'krow'; const f = r.querySelector('.fl'); if (f) f.remove(); }
+  clrSt(no);
+}
+function setS(no, v) {
+  const k = KA(S.cur).find(x => x.No === no); if (v === '') delete S.draft[no]; else { let x = Math.round(+v * 100) / 100; if (isNaN(x) || x < 0) return; if (x > +k.Bobot) { x = +k.Bobot; toast('Skor maksimal butir ini ' + x + '.', 1); } S.draft[no] = x; }
+  clrSt(no);
 }
 function simpan() {
-  const id = S.cur, sid = S.sid, dr = Object.assign({}, S.draft); if (!Object.keys(dr).length) return toast('Isi minimal satu jawaban.', 1);
+  const id = S.cur, sid = S.sid, dr = Object.assign({}, S.draft), ks = KA(id); if (!Object.keys(dr).length) return toast('Isi minimal satu jawaban atau skor.', 1);
+  const ans = {}, skor = {}; ks.forEach(k => { if (k.Tipe === 'PG') { if (dr[k.No]) ans[k.No] = dr[k.No]; } else skor[k.No] = dr[k.No] === undefined ? null : dr[k.No]; });
   (S.jaw[id] = S.jaw[id] || {})[sid] = dr; const foto = S.foto; persist(); toast('Tersimpan: ' + nmS(sid));   // UI instan
-  run('saveJawaban', { ujian: id, sid: sid, ans: dr, sumber: foto ? 'Scan' : 'Manual' }, d => { S.an[id] = d.analisis; persist(); }, () => toast('Belum tersinkron untuk ' + nmS(sid) + '. Simpan ulang siswa ini.', 1));
+  run('saveJawaban', { ujian: id, sid: sid, ans: ans, skor: skor, sumber: foto ? 'Scan' : 'Manual' }, d => { S.an[id] = d.analisis; persist(); }, () => toast('Belum tersinkron untuk ' + nmS(sid) + '. Simpan ulang siswa ini.', 1));
   if (foto) run('uploadFoto', { ujian: id, sid: sid, b64: foto.split(',')[1] });
   const nx = SIS(id).find(s => !S.jaw[id][s.ID]); S.sid = nx ? nx.ID : sid; loadDraft(); refreshScan(); cool = Date.now() + 2500; okN = 0; scrollTo(0, 0);
 }
@@ -232,41 +292,38 @@ function pickFile(i) {
   im.onerror = () => toast('Foto tidak bisa dibuka.', 1); im.src = URL.createObjectURL(f);
 }
 
-// ── Proses satu foto → jawaban ──
+// ── Proses satu foto → jawaban & skor ──
 function proses(c) {
   if (busy) return; busy = true; camSt('Membaca LJK…', 'o'); toast('Membaca LJK…');
   setTimeout(() => {
     try {
-      const n = KS(S.cur).length, r = scanGray(toGray(c.getContext('2d').getImageData(0, 0, c.width, c.height)), n);
-      if (!r.ok) { toast(r.why, 1); camSt('Gagal membaca — coba lagi', 'w'); } else applyScan(r, n);
+      const sp = specOf(S.cur), r = scanGray(toGray(c.getContext('2d').getImageData(0, 0, c.width, c.height)), sp);
+      if (!r.ok) { toast(r.why, 1); camSt('Gagal membaca — coba lagi', 'w'); } else applyScan(r, sp);
     } catch (e) { toast('Gagal memproses foto: ' + e.message, 1); }
     finally { busy = false; }
   }, 30);
 }
-function applyScan(r, n) {
+function applyScan(r, sp) {
   const id = S.cur, ss = SIS(id), J = S.jaw[id] || {}; let who = '';
   if (r.noUrut !== null && r.noUrut >= 1 && r.noUrut <= ss.length) { S.sid = ss[r.noUrut - 1].ID; who = `No. Urut ${r.noUrut} → <b>${esc(ss[r.noUrut - 1].Nama)}</b>`; }
   else if (r.noUrut !== null) who = `<span class="wc">No. Urut ${r.noUrut} tidak ada di kelas ini — memakai siswa yang dipilih.</span>`;
   else who = 'No. Urut tidak terisi — memakai siswa yang dipilih: <b>' + esc(nmS(S.sid)) + '</b>';
-  S.draft = {}; S.st = {}; r.q.forEach((q, i) => { if (q.a) S.draft[i + 1] = q.a; S.st[i + 1] = q.st; });
-  const cnt = k => r.q.filter(q => q.st === k).length, ok = cnt('ok'), ragu = cnt('ragu'), gd = cnt('ganda'), ks = cnt('kosong');
-  // gambar hasil: lembar kanonik + lingkaran penanda
+  // gabungkan ke data tersimpan: halaman lain / butir yang tidak terbaca tetap utuh
+  S.draft = Object.assign({}, J[S.sid] || {}); S.st = {};
+  Object.keys(r.q).forEach(n => { const q = r.q[n]; if (q.a) S.draft[n] = q.a; else delete S.draft[n]; S.st[n] = q.st; });
+  Object.keys(r.s).forEach(n => { const q = r.s[n]; if (q.v !== null) S.draft[n] = q.v; S.st[n] = q.st; });
+  const all = Object.keys(r.q).map(n => r.q[n]).concat(Object.keys(r.s).map(n => r.s[n])), cnt = k => all.filter(q => q.st === k).length, ok = cnt('ok'), ragu = cnt('ragu'), gd = cnt('ganda'), ks = cnt('kosong');
   const wg = r.wg, cv = document.createElement('canvas'); cv.width = wg.w; cv.height = wg.h; const cx = cv.getContext('2d'), im = cx.createImageData(wg.w, wg.h);
   for (let i = 0, j = 0; i < wg.d.length; i++, j += 4) { im.data[j] = im.data[j + 1] = im.data[j + 2] = wg.d[i]; im.data[j + 3] = 255; }
   cx.putImageData(im, 0, 0); S.foto = cv.toDataURL('image/jpeg', 0.55);   // arsip: lembar yang sudah diluruskan
-  const P = TPL.PX; cx.lineWidth = 3; cx.font = 'bold 22px sans-serif';
-  r.q.forEach((q, k) => OPT.forEach((l, j) => { const p = qXY(k, j), on = q.a === l;
-    if (on) { cx.fillStyle = q.st === 'ok' ? 'rgba(52,179,138,.55)' : 'rgba(245,185,78,.7)'; cx.beginPath(); cx.arc(p[0] * P, p[1] * P, TPL.R * P, 0, 7); cx.fill(); }
-    if (q.st === 'ganda' && q.f[j] >= MARK) { cx.strokeStyle = '#ba1a1a'; cx.beginPath(); cx.arc(p[0] * P, p[1] * P, TPL.R * P + 2, 0, 7); cx.stroke(); } }));
-  r.q.forEach((q, k) => { if (q.st === 'ragu' || q.st === 'ganda' || q.st === 'kosong') { const p = qXY(k, 4); cx.fillStyle = q.st === 'kosong' ? '#7A5C54' : q.st === 'ragu' ? '#C77700' : '#ba1a1a'; cx.fillText(q.st === 'kosong' ? '∅' : '!', p[0] * P + 34, p[1] * P + 8); } });
-  const url = cv.toDataURL('image/jpeg', 0.7);
+  paintRead(cx, sp, r); const url = cv.toDataURL('image/jpeg', 0.7);
   const sr = $('sr'); sr.hidden = false; S.pending = true;
-  sr.innerHTML = `<h3>Hasil Pembacaan</h3><p>${who}</p>${J[S.sid] ? '<p class="wc">Siswa ini sudah punya jawaban tersimpan — menyimpan akan menimpa.</p>' : ''}
+  sr.innerHTML = `<h3>Hasil Pembacaan${r.pages > 1 ? ` — halaman ${r.page} dari ${r.pages}` : ''}</h3><p>${who}</p>${r.pages > 1 ? '<p class="mu">LJK ini berhalaman banyak: pindai tiap halaman, hasilnya digabung untuk siswa yang sama.</p>' : ''}${J[S.sid] ? '<p class="wc">Siswa ini sudah punya data tersimpan — hasil halaman ini akan menimpa butir yang sama.</p>' : ''}
     <div class="row" style="margin:8px 0"><span class="tg ok">${ok} terbaca</span><span class="tg wr">${ragu + gd} perlu dicek</span><span class="tg">${ks} kosong</span></div>
     ${r.lowContrast ? '<p class="wc">Foto kurang kontras/terlalu gelap — periksa hasil dengan teliti atau foto ulang dengan cahaya lebih terang.</p>' : ''}
     <img src="${url}" alt="Hasil bacaan LJK" class="ovimg" onclick="zoomOv()"><small class="mu">Ketuk gambar untuk memperbesar. Hijau = terbaca jelas, kuning = ragu, merah = ganda.</small>`;
   S.ovUrl = url; refreshScan(); sr.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  toast(ragu + gd ? `Terbaca. ${ragu + gd} nomor perlu dicek.` : 'Terbaca semua. Periksa lalu Simpan.');
+  toast(ragu + gd ? `Terbaca. ${ragu + gd} butir perlu dicek.` : 'Terbaca semua. Periksa lalu Simpan.');
 }
 function zoomOv() { openModal('Hasil Bacaan LJK', `<img src="${S.ovUrl}" alt="Hasil bacaan LJK" style="width:100%;border-radius:8px"><div class="row" style="margin-top:12px"><a class="btn pri" download="hasil-scan-${esc(S.sid)}.jpg" href="${S.ovUrl}"><span class="ms">download</span>Unduh</a><button class="btn gh" onclick="closeModal()">Tutup</button></div>`); }
 function openModal(t, h) { $('mT').textContent = t; $('mB').innerHTML = h; $('mdl').hidden = false; }
@@ -275,14 +332,15 @@ function closeModal() { $('mdl').hidden = true; $('mB').innerHTML = ''; }
 
 // ── Cetak LJK ──
 function ljkDlg() {
-  const id = S.cur, u = U(id); if (!u) return toast('Pilih ujian dulu.', 1); const n = KS(id).length, ns = SIS(id).length;
-  openModal('Cetak LJK', `<p class="mu">LJK memuat 4 kotak hitam di sudut (penanda scan) dan kotak <b>No. Urut</b> (urutan siswa di daftar kelas). ${n} soal pilihan ganda.</p>
-  <label for="pj_m">Jenis cetak</label><select id="pj_m" style="width:100%"><option value="siswa">Per siswa — nama &amp; No. Urut tercetak (${ns} lembar) — disarankan</option><option value="blank">Kosong — siswa menghitamkan No. Urut sendiri</option></select>
-  <p class="mu" style="margin-top:8px">Cetak ukuran A4, skala 100%, hitam-putih. Boleh difotokopi.</p><div class="row" style="margin-top:12px"><button class="btn pri" onclick="printLjk()"><span class="ms">print</span>Cetak / Simpan PDF</button><button class="btn gh" onclick="closeModal()">Batal</button></div>`);
+  const id = S.cur, u = U(id); if (!u) return toast('Pilih ujian dulu.', 1); const sp = specOf(id), ns = SIS(id).length; let np;
+  try { np = ljkPages(sp); } catch (e) { return toast(e.message, 1); }
+  openModal('Cetak LJK', `<p class="mu">LJK memuat identitas ringkas (Nama, Kelas, <b>No. Urut</b>), ${sp.pg} soal pilihan ganda, ${sp.isi.length} isian, dan ${sp.ura.length} uraian dengan bulatan <b>skor</b> yang dihitamkan guru. Ukuran: <b>${np} halaman per siswa</b>${np > 1 ? ' (butir terlalu banyak untuk 1 halaman; halaman lanjutan dibuat otomatis)' : ' — semua jenis soal muat 1 lembar'}.</p>
+  <label for="pj_m">Jenis cetak</label><select id="pj_m" style="width:100%"><option value="siswa">Per siswa — nama &amp; No. Urut tercetak (${ns} siswa × ${np} hlm = ${ns * np} lembar) — disarankan</option><option value="blank">Kosong — siswa menghitamkan No. Urut sendiri (${np} lembar)</option></select>
+  <p class="mu" style="margin-top:8px">Cetak ukuran A4, skala 100%, hitam-putih, tanpa header/footer. Boleh difotokopi. LJK versi lama tidak bisa dibaca oleh versi ini — cetak ulang.</p><div class="row" style="margin-top:12px"><button class="btn pri" onclick="printLjk()"><span class="ms">print</span>Cetak / Simpan PDF</button><button class="btn gh" onclick="closeModal()">Batal</button></div>`);
 }
 function printLjk() {
-  const id = S.cur, u = U(id), n = KS(id).length, per = $('pj_m').value === 'siswa', base = { judul: u.Nama, mapel: u.Mapel, kelas: u.Kelas, n: n, id: id };
-  const pages = per ? SIS(id).map((s, i) => ljkSvg(Object.assign({}, base, { nama: s.Nama, no: i + 1 }))) : [ljkSvg(base)];
+  const id = S.cur, u = U(id), sp = specOf(id), per = $('pj_m').value === 'siswa', base = { judul: u.Nama, mapel: u.Mapel, kelas: u.Kelas, spec: sp, id: id }; let np, pages = [];
+  try { np = ljkPages(sp); (per ? SIS(id) : [null]).forEach((s, i) => { for (let p = 1; p <= np; p++) pages.push(ljkSvg(Object.assign({}, base, s ? { nama: s.Nama, no: i + 1 } : {}, { page: p }))); }); } catch (e) { return toast(e.message, 1); }
   $('ljkPrint').innerHTML = pages.map(p => `<div class="sheet">${p}</div>`).join(''); document.body.classList.add('pj'); closeModal();
   const ps = document.createElement('style'); ps.id = 'pjStyle'; ps.textContent = '@page{size:A4;margin:0}'; document.head.appendChild(ps);   // A4 tanpa margin hanya saat cetak LJK
   window.onafterprint = () => { document.body.classList.remove('pj'); $('ljkPrint').innerHTML = ''; const x = $('pjStyle'); if (x) x.remove(); window.onafterprint = null; };
@@ -361,53 +419,101 @@ function rPengguna() {
   $('p-pengguna').innerHTML = '<h2>Pengguna</h2><div id="ul" class="card empty">Memuat…</div>';
   run('listUsers', {}, d => { S.users = d; drawU(); });
 }
+const canEditU = u => { const me = S.user; return u.id === me.id || (u.peran !== 'Superadmin' && (me.peran === 'Superadmin' || u.peran !== 'Admin')); };
+const canDelU = u => u.id !== S.user.id && u.peran !== 'Superadmin' && (S.user.peran === 'Superadmin' || u.peran !== 'Admin');
 function drawU() {
   const sa = S.user.peran === 'Superadmin', ops = sa ? ['Guru', 'Operator', 'Admin'] : ['Guru', 'Operator'], o = { Menunggu: 0, Aktif: 1, Nonaktif: 2, Ditolak: 3 };
-  const btn = (id, s, t, c) => `<button class="btn ${c}" style="min-height:36px;padding:0 14px" onclick="setU('${id}','${s}')">${t}</button>`;
+  const btn = (id, s, t, c) => `<button class="btn ${c}" style="min-height:36px;padding:0 14px" onclick="setU('${id}','${s}')">${t}</button>`, ib = (fn, ic, lb) => `<button class="btn gh" style="min-height:36px;padding:0 10px" onclick="${fn}" aria-label="${lb}" title="${lb}"><span class="ms">${ic}</span></button>`;
   $('ul').className = 'card'; $('ul').innerHTML = `<div class="tw"><table><tr><th>Pengguna</th><th>Peran</th><th>Status</th><th>Aksi</th></tr>${S.users.slice().sort((a, b) => o[a.status] - o[b.status]).map(u => {
-    const lock = u.peran === 'Superadmin' || (!sa && u.peran === 'Admin');
-    return `<tr><td><b>${esc(u.nama)}</b><br><small class="mu">@${esc(u.username)} • ${esc(u.sekolah || '-')}</small></td><td>${lock ? esc(u.peran) : `<select id="pr_${esc(u.id)}" aria-label="Peran">${ops.map(p => `<option${p === u.peran ? ' selected' : ''}>${p}</option>`).join('')}</select>`}</td>
-    <td><span class="tg ${u.status === 'Aktif' ? 'ok' : u.status === 'Menunggu' ? 'wr' : ''}">${esc(u.status)}</span></td><td>${lock ? '' : u.status === 'Menunggu' ? btn(u.id, 'Aktif', 'Setujui', 'pri') + ' ' + btn(u.id, 'Ditolak', 'Tolak', 'gh') : u.status === 'Aktif' ? btn(u.id, 'Nonaktif', 'Nonaktifkan', 'gh') : btn(u.id, 'Aktif', 'Aktifkan', 'pri')}</td></tr>`; }).join('')}</table></div>`;
+    const lock = u.peran === 'Superadmin' || (!sa && u.peran === 'Admin'), self = u.id === S.user.id;
+    return `<tr><td><b>${esc(u.nama)}</b>${self ? ' <span class="tg">Anda</span>' : ''}<br><small class="mu">@${esc(u.username)} • ${esc(u.sekolah || '-')}</small></td><td>${lock ? esc(u.peran) : `<select id="pr_${esc(u.id)}" aria-label="Peran">${ops.map(p => `<option${p === u.peran ? ' selected' : ''}>${p}</option>`).join('')}</select>`}</td>
+    <td><span class="tg ${u.status === 'Aktif' ? 'ok' : u.status === 'Menunggu' ? 'wr' : ''}">${esc(u.status)}</span></td><td>${lock || self ? '' : u.status === 'Menunggu' ? btn(u.id, 'Aktif', 'Setujui', 'pri') + ' ' + btn(u.id, 'Ditolak', 'Tolak', 'gh') : u.status === 'Aktif' ? btn(u.id, 'Nonaktif', 'Nonaktifkan', 'gh') : btn(u.id, 'Aktif', 'Aktifkan', 'pri')} ${canEditU(u) ? ib(`editU('${esc(u.id)}')`, 'edit', 'Ubah ' + esc(u.nama)) : ''} ${canDelU(u) ? ib(`askDelU('${esc(u.id)}')`, 'delete', 'Hapus ' + esc(u.nama)) : ''}</td></tr>`; }).join('')}</table></div>`;
 }
 function setU(id, status) {
   const p = $('pr_' + id); run('setUser', { id: id, status: status, peran: p ? p.value : '' }, () => { const x = S.users.find(y => y.id === id); x.status = status; if (p) x.peran = p.value; drawU(); toast('Akun diperbarui.'); });
+}
+function editU(id) {
+  const u = S.users.find(x => x.id === id); if (!u) return; const sa = S.user.peran === 'Superadmin', self = u.id === S.user.id, fixed = u.peran === 'Superadmin', ops = sa ? ['Guru', 'Operator', 'Admin'] : ['Guru', 'Operator'];
+  const f = (i, lb, v, extra) => `<label for="${i}">${lb}</label><input id="${i}" value="${esc(v)}" style="width:100%;margin-bottom:8px" autocomplete="off" ${extra || ''}>`;
+  openModal('Ubah pengguna', f('eu_n', 'Nama lengkap', u.nama, 'maxlength="80"') + f('eu_u', 'Username', u.username, fixed ? 'disabled' : 'maxlength="20"') + f('eu_e', 'Email', u.email || '', 'maxlength="80"') + f('eu_s', 'Sekolah', u.sekolah || '', 'maxlength="80"')
+    + `<div class="row"><div style="flex:1 1 140px"><label for="eu_p">Peran</label><select id="eu_p" style="width:100%" ${self || fixed ? 'disabled' : ''}>${(fixed ? ['Superadmin'] : ops).map(p => `<option${p === u.peran ? ' selected' : ''}>${p}</option>`).join('')}</select></div>
+    <div style="flex:1 1 140px"><label for="eu_t">Status</label><select id="eu_t" style="width:100%" ${self || fixed ? 'disabled' : ''}>${['Aktif', 'Menunggu', 'Nonaktif', 'Ditolak'].map(p => `<option${p === u.status ? ' selected' : ''}>${p}</option>`).join('')}</select></div></div>`
+    + f('eu_w', 'Password baru (kosongkan bila tidak diganti)', '', 'type="password" autocomplete="new-password" style="margin-top:8px"') + `<small class="mu">${self ? 'Mengganti password akun sendiri tidak membuat Anda keluar.' : 'Mengganti password membuat pengguna itu harus masuk ulang.'}</small>
+    <div class="row" style="margin-top:12px"><button class="btn pri" id="bEu" onclick="saveU('${esc(id)}')">Simpan</button><button class="btn gh" onclick="closeModal()">Batal</button></div>`);
+}
+function saveU(id) {
+  const u = S.users.find(x => x.id === id), g = i => $(i).value.trim(), o = { id: id, nama: g('eu_n'), email: g('eu_e'), sekolah: g('eu_s') };
+  if (o.nama.length < 3) return toast('Isi nama lengkap (min. 3 huruf).', 1);
+  if (!$('eu_u').disabled) o.username = g('eu_u').toLowerCase(); if (!$('eu_p').disabled) { o.peran = $('eu_p').value; o.status = $('eu_t').value; }
+  const pw = $('eu_w').value; if (pw) { if (pw.length < 8) return toast('Password baru minimal 8 karakter.', 1); o.password = pw; }
+  const b = $('bEu'); b.disabled = true;
+  run('updateUser', o, d => {
+    Object.assign(u, d.user); if (d.token) setTok(d.token); if (u.id === S.user.id) { S.user.nama = u.nama; persist(); buildNav(); }
+    closeModal(); drawU(); toast('Pengguna diperbarui.');
+  }, () => { b.disabled = false; });
+}
+function askDelU(id) {
+  const u = S.users.find(x => x.id === id); if (!u) return;
+  openModal('Hapus pengguna?', `<p>Hapus akun <b>${esc(u.nama)}</b> (@${esc(u.username)}, ${esc(u.peran)})?</p><p class="wc" style="margin-top:8px">Akun dihapus permanen dan tidak bisa masuk lagi. Bila pengguna ini memiliki ujian, ujiannya dialihkan menjadi milik Anda. Bila hanya ingin menghentikan akses, gunakan <b>Nonaktifkan</b>.</p>
+  <div class="row" style="margin-top:12px"><button class="btn pri" id="bDelP" onclick="doDelU('${esc(id)}')"><span class="ms">delete</span>Ya, hapus</button><button class="btn gh" onclick="closeModal()">Batal</button></div>`);
+}
+function doDelU(id) {
+  const b = $('bDelP'); b.disabled = true;
+  run('deleteUser', { id: id }, d => { S.users = S.users.filter(x => x.id !== id); closeModal(); drawU(); toast(d.dialihkan ? 'Pengguna dihapus; ' + d.dialihkan + ' ujiannya dialihkan ke Anda.' : 'Pengguna dihapus.'); if (d.dialihkan) refresh(true); }, () => { b.disabled = false; });
 }
 
 // ── Rekap Nilai ──
 function rRekap() {
   const el = $('p-rekap'); if (!S.cur) return el.innerHTML = empty('Belum ada ujian.');
   el.innerHTML = `<h2>Rekap Nilai</h2><div class="row" style="margin-bottom:12px"><input id="rq" placeholder="Cari nama siswa…" value="${esc(S.q)}" oninput="deb(this.value)" aria-label="Cari siswa"><select id="rf" onchange="S.fs=this.value;drawRekap()" aria-label="Filter status"><option value="">Semua status</option><option value="T">Tuntas</option><option value="R">Remedial</option><option value="B">Belum</option></select></div>
-  <div class="tw"><table><thead><tr><th>Siswa</th><th>Benar</th><th>Nilai</th><th>Status</th></tr></thead><tbody id="rb"></tbody></table></div>`;
+  <div class="tw"><table><thead><tr><th>Siswa</th><th>PG benar</th><th>Skor</th><th>Nilai</th><th>Status</th></tr></thead><tbody id="rb"></tbody></table></div><p class="mu" style="margin-top:6px">Ketuk nama siswa untuk melihat skor tiap butir.</p>`;
   $('rf').value = S.fs; drawRekap();
 }
 let dt; function deb(v) { clearTimeout(dt); dt = setTimeout(() => { S.q = v; drawRekap(); }, 200); }
 function drawRekap() {
   const q = S.q.toLowerCase(), f = S.fs, r = rows(S.cur).filter(x => x.s.Nama.toLowerCase().includes(q) && (!f || (f === 'B' ? !x.r : f === 'T' ? x.ok : x.r && !x.ok))).sort((a, b) => (b.r ? b.r.n : -1) - (a.r ? a.r.n : -1));
-  $('rb').innerHTML = r.map(x => `<tr><td>${esc(x.s.Nama)}<br><small class="mu">${esc(x.s.NIS)}</small></td><td>${x.r ? x.r.b : '–'}</td><td><b>${x.r ? x.r.n : '–'}</b></td><td><span class="tg ${x.r ? (x.ok ? 'ok' : 'wr') : ''}">${x.r ? (x.ok ? 'Tuntas' : 'Remedial') : 'Belum'}</span></td></tr>`).join('') || '<tr><td colspan="4" class="empty">Tidak ada data.</td></tr>';
+  $('rb').innerHTML = r.map(x => `<tr class="cl" onclick="detSiswa('${esc(x.s.ID)}')"><td>${esc(x.s.Nama)}<br><small class="mu">${esc(x.s.NIS)}</small></td><td>${x.r ? x.r.b : '–'}</td><td>${x.r ? x.r.skor + '<small class="mu">/' + x.r.mx + '</small>' : '–'}</td><td><b>${x.r ? x.r.n : '–'}</b></td><td><span class="tg ${x.r ? (x.ok ? 'ok' : 'wr') : ''}">${x.r ? (x.ok ? 'Tuntas' : 'Remedial') : 'Belum'}</span>${x.r && x.r.t < x.r.total ? `<br><small class="wc">${x.r.total - x.r.t} butir belum terisi</small>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">Tidak ada data.</td></tr>';
+}
+function detSiswa(sid) {
+  const id = S.cur, a = (S.jaw[id] || {})[sid], r = nilai(id, sid); if (!a || !r) return toast('Belum ada data untuk siswa ini.', 1);
+  const body = KA(id).map(k => { const x = a[k.No], none = x === undefined || x === '', q = sk(k, x);
+    const jb = k.Tipe === 'PG' ? (none ? '–' : esc(x) + (x !== k.Kunci ? ` <small class="mu">(kunci ${esc(k.Kunci)})</small>` : '')) : (none ? '<small class="wc">belum dinilai</small>' : '');
+    return `<tr><td>${noLabel(k.No)}</td><td>${k.Tipe}</td><td>${jb}</td><td><b>${r2(q)}</b> / ${+k.Bobot}</td></tr>`; }).join('');
+  openModal(nmS(sid), `<p>Skor <b>${r.skor}</b> dari ${r.mx} → nilai <b>${r.n}</b></p><div class="tw" style="margin-top:8px"><table><tr><th>Butir</th><th>Jenis</th><th>Jawaban</th><th>Skor</th></tr>${body}</table></div>`);
 }
 
-// ── Analisis Butir Soal ──
+// ── Analisis Butir Soal (PG, Isian, Uraian) ──
+const KATC = k => k === 'Diterima' ? 'ok' : k === 'Direvisi' ? 'wr' : '';
 function rAnalisis() {
   const el = $('p-analisis'), a = S.an[S.cur]; if (!a || !a.n) return el.innerHTML = '<h2>Analisis Butir Soal</h2>' + empty('Belum ada jawaban siswa untuk dianalisis.');
-  const c = k => a.items.filter(i => i.kat === k).length;
-  el.innerHTML = `<h2>Analisis Butir Soal</h2><div class="kpis"><div class="card kpi"><span class="mu">Diterima</span><b>${c('Diterima')}</b></div><div class="card kpi"><span class="mu">Direvisi</span><b>${c('Direvisi')}</b></div><div class="card kpi"><span class="mu">Ditolak</span><b>${c('Ditolak')}</b></div><div class="card kpi"><span class="mu">Reliabilitas (KR-20)</span><b>${a.rel}</b></div></div>
-  <div class="two"><div class="tw"><table><tr><th>No</th><th>Kunci</th><th>Kesukaran (p)</th><th>Daya Pembeda (D)</th><th>Status</th></tr>${a.items.map(i => `<tr class="cl" onclick="detail(${i.no})"><td>${i.no}</td><td><b>${i.kunci}</b></td><td>${i.p} <small class="mu">${i.p < .3 ? 'Sukar' : i.p > .7 ? 'Mudah' : 'Sedang'}</small></td><td>${i.d}</td><td><span class="tg ${i.kat === 'Diterima' ? 'ok' : i.kat === 'Direvisi' ? 'wr' : ''}">${i.kat}</span></td></tr>`).join('')}</table></div>
-  <div class="card" id="det"><h3>Sebaran Pengecoh</h3><p class="mu">Ketuk satu baris soal.</p></div></div>`;
+  const c = k => a.items.filter(i => i.kat === k).length, tk = { PG: 'PG', Isian: 'Isian', Uraian: 'Uraian' };
+  el.innerHTML = `<h2>Analisis Butir Soal</h2><div class="kpis"><div class="card kpi"><span class="mu">Diterima</span><b>${c('Diterima')}</b></div><div class="card kpi"><span class="mu">Direvisi</span><b>${c('Direvisi')}</b></div><div class="card kpi"><span class="mu">Ditolak</span><b>${c('Ditolak')}</b></div><div class="card kpi"><span class="mu">Reliabilitas (Alpha)</span><b>${a.rel}</b></div></div>
+  <div class="row" style="margin-bottom:8px"><select id="af" onchange="S.af=this.value;drawAn()" aria-label="Jenis soal"><option value="">Semua jenis</option><option>PG</option><option>Isian</option><option>Uraian</option></select><small class="mu">p = tingkat kesukaran (rata-rata skor ÷ skor maks), D = daya pembeda (kelompok atas − bawah 27%).</small></div>
+  <div class="two"><div class="tw"><table><thead><tr><th>Butir</th><th>Jenis</th><th>Kunci</th><th>Rata-rata</th><th>p</th><th>D</th><th>Status</th></tr></thead><tbody id="ab"></tbody></table></div>
+  <div class="card" id="det"><h3>Detail Butir</h3><p class="mu">Ketuk satu baris soal.</p></div></div>`; $('af').value = S.af || ''; drawAn();
+}
+function drawAn() {
+  const a = S.an[S.cur], f = S.af || '';
+  $('ab').innerHTML = a.items.filter(i => !f || i.tipe === f).map(i => `<tr class="cl" onclick="detail(${i.no})"><td><b>${noLabel(i.no)}</b></td><td>${i.tipe}</td><td>${i.tipe === 'PG' ? '<b>' + esc(i.kunci) + '</b>' : '–'}</td><td>${i.rata}<small class="mu">/${i.max}</small></td><td>${i.p} <small class="mu">${i.p < .3 ? 'Sukar' : i.p > .7 ? 'Mudah' : 'Sedang'}</small></td><td>${i.d}</td><td><span class="tg ${KATC(i.kat)}">${i.kat}</span></td></tr>`).join('') || '<tr><td colspan="7" class="empty">Tidak ada butir.</td></tr>';
 }
 function detail(no) {
-  const i = S.an[S.cur].items.find(x => x.no === no), tot = Math.max(1, S.an[S.cur].n);
-  $('det').innerHTML = `<h3>Soal ${no} — kunci ${i.kunci}</h3>` + LET.map(l => `<div class="pp"><span>${l}</span><div><i class="${l === i.kunci ? 'k' : ''}" style="width:${i.cnt[l] / tot * 100}%"></i></div><small>${i.cnt[l]}</small></div>`).join('')
-    + `<p class="mu">${i.kat === 'Diterima' ? 'Butir baik.' : i.d < .2 ? 'Daya pembeda rendah: periksa kunci atau redaksi soal.' : 'Tingkat kesukaran ekstrem: pertimbangkan revisi.'}</p>`;
+  const a = S.an[S.cur], i = a.items.find(x => x.no === no), tot = Math.max(1, a.n), note = `<p class="mu" style="margin-top:8px">${i.kat === 'Diterima' ? 'Butir baik.' : i.d < .2 ? 'Daya pembeda rendah: periksa kunci/rubrik atau redaksi soal.' : 'Tingkat kesukaran ekstrem: pertimbangkan revisi.'}</p>`;
+  if (i.tipe === 'PG') $('det').innerHTML = `<h3>Soal ${noLabel(no)} — kunci ${esc(i.kunci)}</h3><p class="mu" style="margin-bottom:6px">Sebaran Pengecoh</p>` + LET.map(l => `<div class="pp"><span>${l}</span><div><i class="${l === i.kunci ? 'k' : ''}" style="width:${i.cnt[l] / tot * 100}%"></i></div><small>${i.cnt[l]}</small></div>`).join('') + note;
+  else $('det').innerHTML = `<h3>${i.tipe} ${noLabel(no)}</h3><div class="pp"><span>Rata-rata skor</span><div><i class="k" style="width:${i.p * 100}%"></i></div><small>${i.rata} / ${i.max}</small></div><p class="mu" style="margin-top:6px">${i.kosong ? i.kosong + ' dari ' + a.n + ' siswa belum dinilai pada butir ini (dihitung 0).' : 'Semua siswa sudah dinilai pada butir ini.'}</p>` + note;
 }
 
 // ── Laporan ──
 function rLaporan() {
   $('p-laporan').innerHTML = `<h2>Laporan</h2><div class="card"><div class="row"><button class="btn pri" onclick="csvRekap()"><span class="ms">download</span>Rekap Nilai (CSV/Excel)</button><button class="btn pri" onclick="csvAn()"><span class="ms">download</span>Analisis Soal (CSV/Excel)</button><button class="btn am" onclick="print()"><span class="ms">picture_as_pdf</span>Cetak / Simpan PDF</button></div></div>
-  <h3>Pratinjau Rekap</h3><div class="tw"><table><tr><th>Siswa</th><th>Nilai</th><th>Status</th></tr>${rows(S.cur).map(x => `<tr><td>${esc(x.s.Nama)}</td><td>${x.r ? x.r.n : '–'}</td><td>${x.r ? (x.ok ? 'Tuntas' : 'Remedial') : 'Belum'}</td></tr>`).join('')}</table></div>`;
+  <h3>Pratinjau Rekap</h3><div class="tw"><table><tr><th>Siswa</th><th>Skor</th><th>Nilai</th><th>Status</th></tr>${rows(S.cur).map(x => `<tr><td>${esc(x.s.Nama)}</td><td>${x.r ? x.r.skor : '–'}</td><td>${x.r ? x.r.n : '–'}</td><td>${x.r ? (x.ok ? 'Tuntas' : 'Remedial') : 'Belum'}</td></tr>`).join('')}</table></div>`;
 }
 function dl(n, r) { const Q = String.fromCharCode(34), NL = String.fromCharCode(10), b = new Blob([String.fromCharCode(65279) + r.map(x => x.map(c => Q + String(c).split(Q).join(Q + Q) + Q).join(',')).join(NL)], { type: 'text/csv' }), a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = n; document.body.appendChild(a); a.click(); a.remove(); }
-function csvRekap() { dl('rekap-nilai.csv', [['NIS', 'Nama', 'Benar', 'Nilai', 'Status']].concat(rows(S.cur).map(x => [x.s.NIS, x.s.Nama, x.r ? x.r.b : '', x.r ? x.r.n : '', x.r ? (x.ok ? 'Tuntas' : 'Remedial') : 'Belum']))); }
-function csvAn() { const a = S.an[S.cur]; if (!a || !a.n) return toast('Belum ada data analisis.', 1); dl('analisis-butir.csv', [['No', 'Kunci', 'P', 'D', 'Status']].concat(a.items.map(i => [i.no, i.kunci, i.p, i.d, i.kat]))); }
+function csvRekap() {
+  const id = S.cur, ks = KA(id);
+  dl('rekap-nilai.csv', [['NIS', 'Nama', 'PG Benar', 'Skor', 'Skor Maks', 'Nilai', 'Status'].concat(ks.map(k => 'Skor ' + noLabel(k.No) + ' (maks ' + (+k.Bobot) + ')'))].concat(rows(id).map(x => { const a = (S.jaw[id] || {})[x.s.ID] || {};
+    return [x.s.NIS, x.s.Nama, x.r ? x.r.b : '', x.r ? x.r.skor : '', x.r ? x.r.mx : '', x.r ? x.r.n : '', x.r ? (x.ok ? 'Tuntas' : 'Remedial') : 'Belum'].concat(ks.map(k => x.r ? r2(sk(k, a[k.No])) : '')); })));
+}
+function csvAn() { const a = S.an[S.cur]; if (!a || !a.n) return toast('Belum ada data analisis.', 1); dl('analisis-butir.csv', [['Butir', 'Jenis', 'Kunci', 'Skor Maks', 'Rata-rata', 'P', 'D', 'Status']].concat(a.items.map(i => [noLabel(i.no), i.tipe, i.kunci, i.max, i.rata, i.p, i.d, i.kat]))); }
 function pingSys() {
   const b = $('sysBar'); if (!API_OK) { b.textContent = 'API_URL belum diisi: edit js/config.js dengan URL Web App (/exec) dari Apps Script.'; b.hidden = false; return; }
   warmUp().then(d => { if (d && d.ready === false) { b.textContent = d.pesan; b.hidden = false; } });   // sekaligus memanaskan server

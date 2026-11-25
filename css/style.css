@@ -95,3 +95,8 @@ tr.cl{cursor:pointer}tr.cl:hover{background:var(--tint)}
 button.chip{border:0;cursor:pointer;min-height:36px;font-family:inherit}
 .chip{max-width:36vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .top>div:first-child{min-width:0;flex:1 1 auto}.top select{max-width:100%}.tr{flex:0 1 auto;min-width:0}
+/* v3.2: editor soal, skor, pengguna */
+.ct{display:flex;align-items:center;gap:6px;margin:0;font-weight:600}.ct input{width:80px;flex:none}
+.sk{display:inline-flex;align-items:center;gap:6px;margin:0 0 0 auto;font-size:13px;color:var(--mu);white-space:nowrap}.sk input{width:76px;min-height:40px;flex:none}
+.krow>input{min-height:40px;flex:1 1 120px;min-width:0}
+h4{margin:14px 0 4px;font-size:14px;color:var(--pr)}
